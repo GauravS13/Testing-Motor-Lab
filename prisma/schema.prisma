@@ -1,0 +1,118 @@
+datasource db {
+  provider = "mysql"
+}
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma/client"
+}
+
+// ═══════════════════════════════════════════════════════
+// Table names differ between MySQL and MS SQL:
+//   MySQL:  users, communicationstatus, realtimedata, livetestingdata, masterdata, testeddata
+//   MSSQL:  Users, CommunicationStatus, RealTimeData, LiveTestingData, MasterData, TestedData
+//
+// The @@map() directive is updated by the `pnpm db:switch`
+// script at build time to target the correct table name.
+// ═══════════════════════════════════════════════════════
+
+/// Application users for login authentication
+model User {
+  userId    Int     @id @default(autoincrement()) @map("UserID")
+  userName  String  @map("UserName") @db.VarChar(50)
+  password  String  @map("Password") @db.VarChar(50)
+  email     String? @map("Email") @db.VarChar(50)
+  userType  Int     @map("UserType")
+  isDeleted Boolean @default(false) @map("IsDeleted") @db.TinyInt
+
+  @@map("users")
+}
+
+/// Communication status for all connected devices
+model CommunicationStatus {
+  id               Int      @id @default(autoincrement()) @map("ID")
+  megger           Boolean? @default(false) @map("Megger") @db.TinyInt
+  routineTestSetup Boolean? @default(false) @map("RoutineTestSetup") @db.TinyInt
+  plcCommunication Boolean? @default(false) @map("PLCCommunication") @db.TinyInt
+  powerAnalyzer    Boolean? @default(false) @map("PowerAnalyzer") @db.TinyInt
+  emergency        Boolean? @default(false) @map("Emergency") @db.TinyInt
+
+  @@map("communicationstatus")
+}
+
+/// Live real-time data coming from instruments
+model RealTimeData {
+  id                   Int    @id @default(autoincrement()) @map("ID")
+  insulationResistance Float? @map("InsulationResistance")
+  voltage              Float? @map("Voltage")
+  currentAmp           Float? @map("CurrentAmp")
+  power                Float? @map("Power")
+  frequency            Float? @map("Frequency")
+  rpm                  Float? @map("RPM")
+  direction            Float? @map("Direction")
+
+  @@map("realtimedata")
+}
+
+/// Live testing data with pass/fail results
+model LiveTestingData {
+  id                     Int       @id @default(autoincrement()) @map("ID")
+  dateTime               DateTime? @map("DateTime")
+  beforeNoLoadTest       Float?    @map("BeforeNoLoadTest")
+  afterNoLoadTest        Float?    @map("AfterNoLoadTest")
+  noLoadRatedVolt        Float?    @map("NoLoadRatedVolt")
+  noLoadCurrent          Float?    @map("NoLoadCurrent")
+  noLoadPower            Float?    @map("NoLoadPower")
+  noLoadFrequency        Float?    @map("NoLoadFrequency")
+  noLoadRPM              Float?    @map("NoLoadRPM")
+  directionClockWise     Boolean?  @map("DirectionClockWise") @db.TinyInt
+  directionAntiClockWise Boolean   @default(false) @map("DirectionAntiClockWise") @db.TinyInt
+
+  @@map("livetestingdata")
+}
+
+/// Master configuration / setup data
+model MasterData {
+  id               Int       @id @default(autoincrement()) @map("ID")
+  srNo             Int?      @map("SrNo")
+  dateTime         DateTime? @map("DateTime")
+  model            String?   @map("Model") @db.VarChar(50)
+  phase            Float?    @map("Phase")
+  minInsulationRes Float?    @map("MinInsulationRes")
+  maxInsulationRes Float?    @map("MaxInsulationRes")
+  testTime         Float?    @map("TestTime")
+  minVoltage       Float?    @map("MinVoltage")
+  maxVoltage       Float?    @map("MaxVoltage")
+  minCurrent       Float?    @map("MinCurrent")
+  maxCurrent       Float?    @map("MaxCurrent")
+  minPower         Float?    @map("MinPower")
+  maxPower         Float?    @map("MaxPower")
+  minFrequency     Float?    @map("MinFrequency")
+  maxFrequency     Float?    @map("MaxFrequency")
+  minRPM           Float?    @map("MinRPM")
+  maxRPM           Float?    @map("MaxRPM")
+  direction        Int?      @map("Direction")
+
+  @@map("masterdata")
+}
+
+/// Completed test records
+model TestedData {
+  id                  Int       @id @default(autoincrement()) @map("ID")
+  srNo                Int?      @map("SrNo")
+  modelName           String?   @map("ModelName") @db.VarChar(50)
+  dateTime            DateTime? @map("DateTime")
+  serialNo            String?   @map("SerialNo") @db.VarChar(50)
+  beforeInsulationRes Float?    @map("BeforeInsulationRes")
+  result              Boolean?  @map("Result") @db.TinyInt
+  voltage             Float?    @map("Voltage")
+  currentAmp          Float?    @map("CurrentAmp")
+  power               Float?    @map("Power")
+  frequency           Float?    @map("Frequency")
+  result2             Boolean?  @map("Result2") @db.TinyInt
+  afterInsulationRes  Float?    @map("AfterInsulationRes")
+  result3             Boolean?  @map("Result3") @db.TinyInt
+  finalResult         Boolean?  @map("FinalResult") @db.TinyInt
+
+  @@map("testeddata")
+}
