@@ -40,6 +40,8 @@ export function TestingStep() {
         onComplete={handleCompleteSession}
         onBack={() => goToStep('review')}
         backLabel="Back to Review"
+        isTestingPage={true}
+        autoIncrementSerial={true}
     />
   );
 }

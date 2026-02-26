@@ -4,7 +4,8 @@ import {
     createManyTestedData,
     createTestedData,
     getAllTestedData,
-    getTestedData,
+    getLatestSerialNoByModel,
+    getTestedData
 } from '@/actions/tested-data';
 import type { TestedDataInput, TestedDataRow } from '@/types/test-session';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +19,7 @@ export const TESTED_DATA_KEYS = {
   all: ['tested-data'] as const,
   latest: ['tested-data', 'latest'] as const,
   list: ['tested-data', 'list'] as const,
+  serialNumber: (modelName: string) => ['tested-data', 'serial-number', modelName] as const,
 };
 
 /**
@@ -83,4 +85,22 @@ export function useCreateManyTestedData() {
       queryClient.invalidateQueries({ queryKey: TESTED_DATA_KEYS.all });
     },
   });
+}
+
+/**
+ * Hook to fetch the latest serial number for a specific model.
+ * It only runs if modelName is provided.
+ */
+export function useLatestSerialNo(modelName: string | null) {
+  const { data, isLoading, isError } = useQuery<string | null>({
+    queryKey: modelName ? TESTED_DATA_KEYS.serialNumber(modelName) : [],
+    queryFn: () => (modelName ? getLatestSerialNoByModel(modelName) : null),
+    enabled: !!modelName,
+  });
+
+  return {
+    serialNo: data ?? null,
+    isLoading,
+    isError,
+  };
 }

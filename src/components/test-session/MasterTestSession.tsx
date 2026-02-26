@@ -45,6 +45,7 @@ export function MasterTestSession({ records }: MasterTestSessionProps) {
             backLabel="" 
             completeLabel="Finish Testing"
             footer={<TestSessionSummary data={allTestedData} loading={loadingStats} />}
+            isTestingPage={true}
         />
       </div>
     </div>

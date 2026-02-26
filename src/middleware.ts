@@ -12,13 +12,8 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 1. If user is NOT logged in and trying to access protected routes
-  if (!session.isLoggedIn) {
-    // List of protected routes
-    const protectedRoutes = ['/test-session', '/results'];
-    
-    if (protectedRoutes.some(route => pathname.startsWith(route))) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
+  if (!session.isLoggedIn && pathname !== '/login') {
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
   // 2. Role-based access: operators (userType 2) can only access /testing

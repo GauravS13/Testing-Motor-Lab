@@ -3,22 +3,22 @@
 import { AppShell } from '@/components/layout/app-shell';
 import { DataReviewStep } from '@/components/test-session/DataReviewStep';
 import { StepperHeader } from '@/components/test-session/StepperHeader';
+import { TestingStep } from '@/components/test-session/TestingStep';
 import { UploadStep } from '@/components/test-session/UploadStep';
 import { useExcelUpload } from '@/hooks/useExcelUpload';
 import { useTestSessionStore } from '@/store/test-session';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 /* ═══════════════════════════════════════════════════════
    /upload-excel — Upload & sync master data from Excel.
    
-   Reuses the same stepper workflow as /test-session
-   (Upload → Review → Testing).
+   Full 3-step stepper (Upload → Review → Testing).
+   The Testing step is rendered INLINE within this page,
+   separate from the standalone /testing page.
    ═══════════════════════════════════════════════════════ */
 
 export default function UploadExcelPage() {
   const { currentStep, completedSteps, goToStep, completeStep, reset: resetStore } = useTestSessionStore();
-  const router = useRouter();
 
   // Reset store on mount so stale stepper state doesn't persist across navigations
   useEffect(() => {
@@ -78,9 +78,37 @@ export default function UploadExcelPage() {
             onSync={() => sync(parsedRows)}
             onUpdateRecord={updateRowData}
             onDiscard={resetUpload}
-            onNext={() => router.push('/testing')}
+            onNext={() => {
+              // Map parsed rows to TestRecord format for the Testing Step
+              const recordsToPersist = parsedRows.map((row, idx) => ({
+                id: String(idx),
+                srNo: Number(row.data.srNo) || 0,
+                model: row.data.model || '',
+                phase: String(row.data.phase || ''),
+                minInsulationRes: String(row.data.minInsulationRes || ''),
+                maxInsulationRes: String(row.data.maxInsulationRes || ''),
+                testTime: String(row.data.testTime || ''),
+                minVoltage: String(row.data.minVoltage || ''),
+                maxVoltage: String(row.data.maxVoltage || ''),
+                minCurrent: String(row.data.minCurrent || ''),
+                maxCurrent: String(row.data.maxCurrent || ''),
+                minPower: String(row.data.minPower || ''),
+                maxPower: String(row.data.maxPower || ''),
+                minFrequency: String(row.data.minFrequency || ''),
+                maxFrequency: String(row.data.maxFrequency || ''),
+                minRPM: String(row.data.minRPM || ''),
+                maxRPM: String(row.data.maxRPM || ''),
+                direction: String(row.data.direction || ''),
+              }));
+
+              useTestSessionStore.getState().setParsedData(recordsToPersist, parsedRows.length, 0);
+              completeStep('review');
+              goToStep('testing');
+            }}
           />
         )}
+
+        {currentStep === 'testing' && <TestingStep />}
       </div>
     </AppShell>
   );

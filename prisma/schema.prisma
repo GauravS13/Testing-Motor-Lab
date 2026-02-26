@@ -116,3 +116,10 @@ model TestedData {
 
   @@map("testeddata")
 }
+
+/// Flag table for auto-submit trigger (single row, single field)
+model SubmitTestedData {
+  isSubmited Int @id @default(0) @map("IsSubmited")
+
+  @@map("submittesteddata")
+}

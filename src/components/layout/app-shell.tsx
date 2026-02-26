@@ -23,7 +23,9 @@ export function AppShell({ children, activeTab }: AppShellProps) {
   const handleLogout = () => {
     logout.mutate(undefined, {
       onSuccess: () => {
-        router.push('/login')
+        localStorage.clear()
+        sessionStorage.clear()
+        window.location.href = '/login'
       }
     })
   }

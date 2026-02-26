@@ -42,6 +42,7 @@ const tableNameMap = {
     LiveTestingData: 'livetestingdata',
     MasterData: 'masterdata',
     TestedData: 'testeddata',
+    SubmitTestedData: 'submittesteddata',
   },
   mssql: {
     User: 'Users',
@@ -50,6 +51,7 @@ const tableNameMap = {
     LiveTestingData: 'LiveTestingData',
     MasterData: 'MasterData',
     TestedData: 'TestedData',
+    SubmitTestedData: 'SubmitTestedData',
   },
 }
 

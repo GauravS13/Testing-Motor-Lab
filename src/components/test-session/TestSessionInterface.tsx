@@ -7,29 +7,32 @@ import { PassFailBadge } from '@/components/ui/PassFailBadge';
 import { StatusIndicator } from '@/components/ui/StatusIndicator';
 import { Input } from '@/components/ui/input';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import { useCommunicationStatus } from '@/hooks/useCommunicationStatus';
 import { useLiveTestingData } from '@/hooks/useLiveTestingData';
 import { useRealTimeData } from '@/hooks/useRealTimeData';
+import { useSubmitTestedData } from '@/hooks/useSubmitTestedData';
+import { TESTED_DATA_KEYS, useLatestSerialNo } from '@/hooks/useTestedData';
 import { cn } from '@/lib/utils';
 import { TestedDataInput } from '@/types/test-session';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-    Activity,
-    AlertTriangle,
-    ArrowLeft,
-    Check,
-    CircleCheck,
-    CircleX,
-    Gauge,
-    RefreshCw,
-    Send
+  Activity,
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  CircleCheck,
+  CircleX,
+  Gauge,
+  RefreshCw,
+  Send
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 /* ═══════════════════════════════════════════════════════
@@ -72,6 +75,10 @@ interface TestSessionInterfaceProps {
   backLabel?: string;
   completeLabel?: string;
   footer?: React.ReactNode;
+  isTestingPage?: boolean;
+  /** When true, the serial number fetched from DB will be incremented by 1 (stepper flow).
+   *  When false, the raw DB value is shown as-is (standalone testing page). */
+  autoIncrementSerial?: boolean;
 }
 
 // ── Utilities for dynamic labels ──────────────────────
@@ -110,9 +117,23 @@ interface TestLimitRow {
 // ── Helper for Direction Labels ──
 const getDirectionLabel = (val: number | string | boolean | null | undefined) => {
   if (val === 1 || val === '1' || val === true || val === 'CW') return 'CW';
-  if (val === 2 || val === '2' || val === 'ACW') return 'ACW';
-  if (val === 0 || val === '0') return '—';
+  if (val === 0 || val === '0' || val === false || val === 'ACW' || val === 2 || val === '2') return 'ACW';
   return '—';
+};
+
+// ── Helper for Formatting Numbers ──
+const formatValue = (val: number | string | boolean | null | undefined) => {
+  if (val == null) return '—';
+  if (typeof val === 'number') {
+    return Number.isInteger(val) ? String(val) : val.toFixed(2);
+  }
+  if (typeof val === 'string') {
+    const num = Number(val);
+    if (!isNaN(num) && val.trim() !== '') {
+      return Number.isInteger(num) ? String(num) : num.toFixed(2);
+    }
+  }
+  return String(val);
 };
 
 export function TestSessionInterface({
@@ -123,7 +144,9 @@ export function TestSessionInterface({
   onBack,
   backLabel = "Back",
   completeLabel = "Complete Test Session",
-  footer
+  footer,
+  isTestingPage = false,
+  autoIncrementSerial = false
 }: TestSessionInterfaceProps) {
   
   // State for currently selected record index (default to 0)
@@ -134,32 +157,76 @@ export function TestSessionInterface({
   const [serialInputs, setSerialInputs] = useState<Record<number, string>>({});
   const [useQrCode, setUseQrCode] = useState(false);
 
-  const handleSerialChange = (val: string) => {
-    // 1. Update the current input immediately
-    const newInputs = { ...serialInputs, [selectedIndex]: val };
+  // Query client for cache invalidation after submit
+  const queryClient = useQueryClient();
 
-    // 2. Try to extract a numeric suffix from the input
-    const match = val.match(/^(.*?)(\d+)$/);
-    
+  // Auto-populate logic from latest serial in DB
+  const { serialNo: latestSerialNo } = useLatestSerialNo(
+    isTestingPage && activeRecord ? activeRecord.model : null
+  );
+
+  // Track whether the user has manually edited each serial field
+  const userEditedSerialRef = useRef<Record<number, boolean>>({});
+
+  // Helper: compute incremented serial from a DB serial value
+  const incrementSerial = (serial: string): string => {
+    const match = serial.match(/^(.*?)(\d+)$/);
     if (match && match[1] !== undefined && match[2] !== undefined) {
       const prefix = match[1];
       const numberPart = match[2];
-      const baseNumber = parseInt(numberPart, 10);
-      const numberLength = numberPart.length;
+      const newNumber = parseInt(numberPart, 10) + 1;
+      const newNumberStr = String(newNumber).padStart(numberPart.length, '0');
+      return `${prefix}${newNumberStr}`;
+    }
+    return serial;
+  };
 
-      // 3. Iterate through all other records to auto-fill EMPTY fields
-      records.forEach((_, idx) => {
-        // Skip current index
-        if (idx === selectedIndex) return;
+  // Effect to auto-populate serial number from DB
+  // - Stepper flow (autoIncrementSerial=true): fetches latest serial from DB and increments by 1
+  // - Standalone testing page (autoIncrementSerial=false): shows the raw DB value as-is
+  useEffect(() => {
+    if (!isTestingPage || !latestSerialNo || !activeRecord?.model) return;
+    if (userEditedSerialRef.current[selectedIndex]) return;
 
-        // Only fill if currently empty
-        if (!newInputs[idx] || newInputs[idx].trim() === '') {
-          const offset = idx - selectedIndex;
-          const newNumber = baseNumber + offset;
-          const newNumberStr = String(newNumber).padStart(numberLength, '0');
-          newInputs[idx] = `${prefix}${newNumberStr}`;
-        }
-      });
+    const serialToSet = autoIncrementSerial
+      ? incrementSerial(latestSerialNo)
+      : latestSerialNo;
+
+    setSerialInputs((prev) => ({ ...prev, [selectedIndex]: serialToSet }));
+  }, [latestSerialNo, isTestingPage, autoIncrementSerial, activeRecord?.model, selectedIndex]);
+
+  const handleSerialChange = (val: string) => {
+    // Mark this field as manually edited by the user so auto-populate won't overwrite it
+    userEditedSerialRef.current[selectedIndex] = true;
+
+    // 1. Update the current input immediately
+    const newInputs = { ...serialInputs, [selectedIndex]: val };
+
+    // 2. Only run the old auto-fill logic if we are NOT on the testing page
+    if (!isTestingPage) {
+      // Try to extract a numeric suffix from the input
+      const match = val.match(/^(.*?)(\d+)$/);
+      
+      if (match && match[1] !== undefined && match[2] !== undefined) {
+        const prefix = match[1];
+        const numberPart = match[2];
+        const baseNumber = parseInt(numberPart, 10);
+        const numberLength = numberPart.length;
+
+        // 3. Iterate through all other records to auto-fill EMPTY fields
+        records.forEach((_, idx) => {
+          // Skip current index
+          if (idx === selectedIndex) return;
+
+          // Only fill if currently empty
+          if (!newInputs[idx] || newInputs[idx].trim() === '') {
+            const offset = idx - selectedIndex;
+            const newNumber = baseNumber + offset;
+            const newNumberStr = String(newNumber).padStart(numberLength, '0');
+            newInputs[idx] = `${prefix}${newNumberStr}`;
+          }
+        });
+      }
     }
 
     setSerialInputs(newInputs);
@@ -190,6 +257,11 @@ export function TestSessionInterface({
     refetch: refetchLiveTestingData
 } = useLiveTestingData(5000);
 
+  const [isAutoSubmitCooldown, setIsAutoSubmitCooldown] = useState(false);
+
+  // Poll for the auto-submit flag every 5s unless in cooldown
+  const { isSubmited } = useSubmitTestedData(!isAutoSubmitCooldown);
+
   const showSkeleton = !realTimeData;
   const loadingResults = !realTimeData || !liveTestingData;
   const hasError = statusError || rtdError;
@@ -205,7 +277,7 @@ export function TestSessionInterface({
   // ── Dynamic real-time data cards ──
   const realTimeCards = realTimeData
     ? Object.entries(realTimeData).map(([key, value]) => {
-        let displayValue = value != null ? String(value) : '—';
+        let displayValue = formatValue(value);
         if (key === 'direction') {
             displayValue = getDirectionLabel(value);
         }
@@ -235,7 +307,7 @@ export function TestSessionInterface({
   const isFreqPass = checkLimits(liveTestingData?.noLoadFrequency, activeRecord?.minFrequency, activeRecord?.maxFrequency);
   const isRpmPass = checkLimits(liveTestingData?.noLoadRPM, activeRecord?.minRPM, activeRecord?.maxRPM);
   
-  const measuredDirectionLabel = liveTestingData?.directionClockWise ? 'CW' : liveTestingData?.directionAntiClockWise ? 'ACW' : '—';
+  const measuredDirectionLabel = liveTestingData?.directionClockWise !== undefined && liveTestingData?.directionClockWise !== null ? getDirectionLabel(liveTestingData.directionClockWise) : '—';
   const expectedDirectionLabel = getDirectionLabel(activeRecord?.direction);
   const isDirectionPass = measuredDirectionLabel !== '—' && measuredDirectionLabel === expectedDirectionLabel;
 
@@ -253,7 +325,7 @@ export function TestSessionInterface({
   
   const finalResultLabel = overallPass ? 'PASS' : 'FAIL';
 
-  const handleSubmitCurrent = async () => {
+  const handleSubmitCurrent = async (isAutoSubmit = false) => {
     if (!liveTestingData || !activeRecord) return;
     
     const serial = serialInputs[selectedIndex];
@@ -262,7 +334,7 @@ export function TestSessionInterface({
         return;
     }
 
-    if (submittedRecordIds.includes(activeRecord.id)) {
+    if (!isAutoSubmit && submittedRecordIds.includes(activeRecord.id)) {
         toast.info('This record has already been submitted.');
         return;
     }
@@ -278,7 +350,7 @@ export function TestSessionInterface({
         const recIsFreqPass = checkLimits(liveTestingData.noLoadFrequency, activeRecord.minFrequency, activeRecord.maxFrequency);
         const recIsRpmPass = checkLimits(liveTestingData.noLoadRPM, activeRecord.minRPM, activeRecord.maxRPM);
         
-        const measuredDirLabel = liveTestingData.directionClockWise ? 'CW' : liveTestingData.directionAntiClockWise ? 'ACW' : '—';
+        const measuredDirLabel = liveTestingData.directionClockWise !== undefined && liveTestingData.directionClockWise !== null ? getDirectionLabel(liveTestingData.directionClockWise) : '—';
         const expectedDirLabel = getDirectionLabel(activeRecord.direction);
         const recIsDirectionPass = measuredDirLabel !== '—' && measuredDirLabel === expectedDirLabel;
 
@@ -310,13 +382,20 @@ export function TestSessionInterface({
         const result = await createTestedData(payload);
         
         if (result) {
+            // Invalidate serial number cache so next auto-populate gets fresh data
+            queryClient.invalidateQueries({ queryKey: TESTED_DATA_KEYS.all });
+            // Reset user-edit tracking so next record can auto-populate from DB
+            userEditedSerialRef.current = {};
+
             onMarkAsSubmitted(activeRecord.id);
             toast.success(`Result for ${activeRecord.model} saved!`);
             
-            // Auto-advance
-            const nextUnsubmittedIndex = records.findIndex((r, i) => i > selectedIndex && !submittedRecordIds.includes(r.id));
-            if (nextUnsubmittedIndex !== -1) {
-                setSelectedIndex(nextUnsubmittedIndex);
+            // Auto-advance if manual submit
+            if (!isAutoSubmit) {
+                const nextUnsubmittedIndex = records.findIndex((r, i) => i > selectedIndex && !submittedRecordIds.includes(r.id));
+                if (nextUnsubmittedIndex !== -1) {
+                    setSelectedIndex(nextUnsubmittedIndex);
+                }
             }
         } else {
             toast.error('Failed to save record.');
@@ -328,14 +407,41 @@ export function TestSessionInterface({
     }
   };
 
+  // ── Auto-submit listener ──
+  useEffect(() => {
+    // If we're currently in cooldown, skip all auto-submit checks
+    if (isAutoSubmitCooldown) return;
+
+    console.log('--- AUTO SUBMIT CHECK ---');
+    console.log('isSubmited:', isSubmited);
+    console.log('has liveTestingData:', !!liveTestingData);
+    console.log('has realTimeData:', !!realTimeData);
+    console.log('has activeRecord:', !!activeRecord);
+    console.log('is already submitted:', activeRecord ? submittedRecordIds.includes(activeRecord.id) : false);
+
+    // If the database flag says "submit" (1), and we are ready to submit.
+    // We allow auto-submitting multiple times for the current record, so no check on submittedRecordIds here.
+    if (isSubmited === 1 && liveTestingData && realTimeData && activeRecord) {
+      console.log('✅ Triggering auto submit!');
+      handleSubmitCurrent(true);
+      
+      // Start 10-second cooldown
+      setIsAutoSubmitCooldown(true);
+      setTimeout(() => {
+        setIsAutoSubmitCooldown(false);
+      }, 10000);
+    }
+  }, [isSubmited, liveTestingData, realTimeData, activeRecord, submittedRecordIds, handleSubmitCurrent, isAutoSubmitCooldown]);
+
+
   const allSubmitted = records.length > 0 && records.every(r => submittedRecordIds.includes(r.id));
 
   // ── Rows ──
   const noLoadTestRows: TestLimitRow[] = activeRecord ? [
-    { parameter: 'Min. Rated Voltage (Volt)', minLimit: activeRecord.minVoltage, maxLimit: activeRecord.maxVoltage, measuredValue: liveTestingData?.noLoadRatedVolt != null ? String(liveTestingData.noLoadRatedVolt) : '—', status: voltageStatus },
-    { parameter: 'Min. Current (Amp)', minLimit: activeRecord.minCurrent, maxLimit: activeRecord.maxCurrent, measuredValue: liveTestingData?.noLoadCurrent != null ? String(liveTestingData.noLoadCurrent) : '—', status: currentStatus },
-    { parameter: 'Min. Power (Watt)', minLimit: activeRecord.minPower, maxLimit: activeRecord.maxPower, measuredValue: liveTestingData?.noLoadPower != null ? String(liveTestingData.noLoadPower) : '—', status: powerStatus },
-    { parameter: 'Min. Frequency (Hz)', minLimit: activeRecord.minFrequency, maxLimit: activeRecord.maxFrequency, measuredValue: liveTestingData?.noLoadFrequency != null ? String(liveTestingData.noLoadFrequency) : '—', status: freqStatus },
+    { parameter: 'Min. Rated Voltage (Volt)', minLimit: activeRecord.minVoltage, maxLimit: activeRecord.maxVoltage, measuredValue: formatValue(liveTestingData?.noLoadRatedVolt), status: voltageStatus },
+    { parameter: 'Min. Current (Amp)', minLimit: activeRecord.minCurrent, maxLimit: activeRecord.maxCurrent, measuredValue: formatValue(liveTestingData?.noLoadCurrent), status: currentStatus },
+    { parameter: 'Min. Power (Watt)', minLimit: activeRecord.minPower, maxLimit: activeRecord.maxPower, measuredValue: formatValue(liveTestingData?.noLoadPower), status: powerStatus },
+    { parameter: 'Min. Frequency (Hz)', minLimit: activeRecord.minFrequency, maxLimit: activeRecord.maxFrequency, measuredValue: formatValue(liveTestingData?.noLoadFrequency), status: freqStatus },
   ] : [];
 
   return (
@@ -507,7 +613,7 @@ export function TestSessionInterface({
                         {activeRecord?.minInsulationRes || '0'} <span className="text-slate-300 mx-1">|</span> {activeRecord?.maxInsulationRes || '1000'}
                       </td>
                       <td className="py-2 px-4 text-center text-base font-bold text-slate-900 tabular-nums tracking-tight">
-                         {!liveTestingData ? <div className="flex justify-center opacity-50"><PulseLine className="h-5 w-12" /></div> : (liveTestingData?.beforeNoLoadTest ?? '—')}
+                         {!liveTestingData ? <div className="flex justify-center opacity-50"><PulseLine className="h-5 w-12" /></div> : formatValue(liveTestingData?.beforeNoLoadTest)}
                       </td>
                       <td className="py-2 pl-4 text-center px-4">
                          {!liveTestingData ? <div className="flex justify-center opacity-50"><PulseLine className="h-6 w-16" /></div> : <PassFailBadge status={irStatus} />}
@@ -519,7 +625,7 @@ export function TestSessionInterface({
                         {activeRecord?.minInsulationRes || '0'} <span className="text-slate-300 mx-1">|</span> {activeRecord?.maxInsulationRes || '1000'}
                       </td>
                       <td className="py-2 px-4 text-center text-base font-bold text-slate-900 tabular-nums tracking-tight">
-                         {!liveTestingData ? <div className="flex justify-center opacity-50"><PulseLine className="h-5 w-12" /></div> : (liveTestingData?.afterNoLoadTest ?? '—')}
+                         {!liveTestingData ? <div className="flex justify-center opacity-50"><PulseLine className="h-5 w-12" /></div> : formatValue(liveTestingData?.afterNoLoadTest)}
                       </td>
                       <td className="py-2 pl-4 text-center px-4">
                          {!liveTestingData ? <div className="flex justify-center opacity-50"><PulseLine className="h-6 w-16" /></div> : <PassFailBadge status={afterIrStatus} />}
@@ -585,7 +691,7 @@ export function TestSessionInterface({
                         {activeRecord?.minRPM || '—'} <span className="text-slate-300 mx-1">|</span> {activeRecord?.maxRPM || '—'}
                       </td>
                       <td className="py-2 px-4 text-center text-base font-bold text-slate-900 tabular-nums tracking-tight">
-                        {!liveTestingData ? <div className="flex justify-center opacity-50"><PulseLine className="h-5 w-12" /></div> : (liveTestingData?.noLoadRPM || '—')}
+                        {!liveTestingData ? <div className="flex justify-center opacity-50"><PulseLine className="h-5 w-12" /></div> : formatValue(liveTestingData?.noLoadRPM)}
                       </td>
                       <td className="py-2 pl-4 text-center px-4">
                         {!liveTestingData ? <div className="flex justify-center opacity-50"><PulseLine className="h-6 w-16" /></div> : <PassFailBadge status={rpmStatus} />}
@@ -627,8 +733,8 @@ export function TestSessionInterface({
               </button>
             ) : (
               <button
-                onClick={handleSubmitCurrent}
-                disabled={!liveTestingData || !realTimeData || (activeRecord && submittedRecordIds.includes(activeRecord.id))}
+                onClick={() => handleSubmitCurrent(false)}
+                disabled={!liveTestingData || !realTimeData || (activeRecord && submittedRecordIds.includes(activeRecord.id)) || false}
                 type="button"
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all duration-200 hover:from-emerald-600 hover:to-emerald-700 hover:shadow-md hover:shadow-emerald-500/25 active:shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full md:w-auto"
               >

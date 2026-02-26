@@ -141,3 +141,52 @@ export async function getDailyStats() {
     };
   }
 }
+
+/**
+ * Fetches the latest serial number for a given model.
+ * Orders by dateTime (most recent first) to pick the latest tested entry.
+ * Used to auto-populate the serial number in the stepper Testing page.
+ */
+export async function getLatestSerialNoByModel(modelName: string): Promise<string | null> {
+  try {
+    const row = await prisma.testedData.findFirst({
+      where: { modelName },
+      orderBy: [{ dateTime: 'desc' }, { id: 'desc' }],
+      select: { serialNo: true },
+    });
+    return row?.serialNo ?? null;
+  } catch (error) {
+    console.error('[getLatestSerialNoByModel] Error:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetches TestedData rows filtered by optional model and date range.
+ * Used by the Report Generation page to export data as Excel.
+ */
+export async function getReportData(
+  dateFrom: string,
+  dateTo: string,
+  model?: string,
+): Promise<TestedDataRow[]> {
+  try {
+    const from = new Date(dateFrom);
+    from.setHours(0, 0, 0, 0);
+
+    const to = new Date(dateTo);
+    to.setHours(23, 59, 59, 999);
+
+    const rows = await prisma.testedData.findMany({
+      where: {
+        dateTime: { gte: from, lte: to },
+        ...(model ? { modelName: model } : {}),
+      },
+      orderBy: { dateTime: 'asc' },
+    });
+    return rows as TestedDataRow[];
+  } catch (error) {
+    console.error('[getReportData] Error:', error);
+    return [];
+  }
+}
